@@ -1,0 +1,177 @@
+---
+title: "Modeling and prediction for movies"
+output:
+  html_document:
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+  pdf_document: default
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(GGally)
+```
+
+### Load data
+
+Make sure your data and R Markdown files are in the same directory. When loaded
+your data file will be called `movies`. Delete this note when before you submit 
+your work. 
+
+```{r load-data}
+load("movies.Rdata")
+```
+
+
+
+* * *
+
+## Part 1: Data
+
+###The data set includes information about 651 randomly sampled movies. The movies are produced before 2016 and their information were collected from websites; http://www.rottentomatoes.com/ and http://www.imdb.com/ . The dataset comprises of 651 rows, each of which is a movie, and 32 columns, each of which is a variable. 
+
+###The random sampling method makes the result of this study generalizable to all commercial movies, with a possible exception of movies from localities outside of the websites' reach. 
+
+###Due to the data's observational nature, there is no random assignment; therefore, the current study will not result in any statement about causality.
+
+* * *
+
+## Part 2: Research question
+
+###Which attributes of a movie are correlated to its popularity? How are these attributes correlated to the movies' popularity? If answered with high reliability and significance, the result would provide movie makers with valuable information about consumers' preference. Furthermore, decisions about new production can be driven by this information. 
+
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+###Using the eye test through the variables provided in the codebook, let's first filter for variables that will be meaningful for the current study.
+
+###We will start with twelve variables which are possibly meaningful and informative: title, genre, mpaa_rating, thtr_rel_year, thtr_rel_month, thtr_rel_day, imdb_rating, critics_score, audience_score, best_actor_win, best_actress_win, best_dir_win.
+
+#Some of these variables may have collinearity, and may need to be omitted eventually.
+```{r omitting some varaibles by an eye test}
+main <- select(movies, title, genre, mpaa_rating, thtr_rel_year, thtr_rel_month, thtr_rel_day, runtime, imdb_rating, critics_score, audience_score, best_actor_win, best_actress_win, best_dir_win)
+```
+
+
+```{r summarising and plotting the data to explore the variables}
+#First, let's establish audience_score variable as the response variable appropriate for our research question. Further, check out how the score is distributed and find out some useful summary statistics.
+summary(main$audience_score)
+hist(main$audience_score)
+
+#best_dir_win is possibly a significant predictor based on its boxplot. There is a difference between the conditional group means and their distributions.
+table(main$best_dir_win)
+qplot(best_dir_win, audience_score, data = main, geom="boxplot")
+tapply(main$audience_score, main$best_dir_win, summary)
+l1<- lm(audience_score~best_dir_win, data=main)
+summary(l1)
+
+#very strong correlation between audience_score and imdb_rating ( as well as critics_score, though not as strong) based on its ggpairs and point plot with regression line. Also, with high correlation coefficient, imdb_rating and critics_score seem to be collinear and would be redundant in our modeling.
+ggpairs(main, columns=8:10)
+main <- select(main, -critics_score)
+
+l2 <- lm(audience_score~imdb_rating, data=main)
+summary(l2)
+
+ggplot(data=l2, aes(x=.fitted, y=.resid))+
+  geom_point()+
+  geom_hline(yintercept=0, linetype="dashed")+
+  xlab("Fitted values")+
+  ylab("Residuals")#plot shows a random distribution around 0.
+
+ggplot(data=l2, aes(sample=.resid))+
+  stat_qq()#the plot shows a farily symmetric and a right-skewedness, but it is nearly normally distributed.
+
+#genre variable conditions show quite a bit of divergence in audience score based on its boxplot, however some of the conditions are not significantly correlated while a few of them are very significantly correlated.
+table(main$genre)
+
+qplot(genre, audience_score, data=main, geom="boxplot")+
+  theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust = 0))
+
+tapply(main$audience_score, main$genre, summary)
+
+l3<-lm(audience_score~genre, data=main)
+summary(l3)
+
+#runtime variable shows a significant correlation to audience_score from the plot and linear modeling.
+ggplot(data=main, aes(x=runtime, y=audience_score))+
+  geom_jitter()+
+  stat_smooth(method="lm", se=FALSE)
+
+l4<-lm(audience_score~runtime, data=main)
+summary(l4)
+
+ggplot(data=l4, aes(x=.fitted, y=.resid))+
+  geom_point()+
+  geom_hline(yintercept=0, linetype="dashed")+
+  xlab("Fitted values")+
+  ylab("Residuals")#plot shows a random distribution around 0.
+
+ggplot(data=l4, aes(sample=.resid))+
+  stat_qq()#the plot shows a farly symmetric shape and a left-skewedness, but it is nearly normally distributed
+
+
+#Summary look at best_actor_win and best_actress_win shows neither variable is correlated to audience_score. We will omit them.
+main<-select(main, -best_actor_win, -best_actress_win)
+```
+
+* * *
+
+## Part 4: Modeling
+```{r}
+#we will use the model selection method of backward elimination by adjusted R squared.
+m1<- lm(audience_score~runtime+genre+best_dir_win+imdb_rating, data=main)
+summary(m1)$adj.r.squared
+
+m2<- lm(audience_score~runtime+genre+imdb_rating, data=main)
+summary(m2)$adj.r.squared
+
+m3<- lm(audience_score~runtime+best_dir_win+imdb_rating, data=main)
+summary(m3)$adj.r.squared
+
+m4<- lm(audience_score~genre+best_dir_win+imdb_rating, data=main)
+summary(m4)$adj.r.squared
+
+m5<- lm(audience_score~runtime+genre+best_dir_win, data=main)
+summary(m5)$adj.r.squared
+
+#m2 has the highest adjusted r squared value with .7625114. that seems to be a better model. we will try removing a second variable.
+m6<-lm(audience_score~runtime+imdb_rating, data=main)
+summary(m6)$adj.r.squared
+
+m7<- lm(audience_score~genre+imdb_rating, data=main)
+summary(m7)$adj.r.squared
+
+m8<- lm(audience_score~genre+runtime, data=main)
+summary(m8)$adj.r.squared
+
+#m2 still is the model with the highest adjusted R squared value.
+
+```
+
+* * *
+
+## Part 5: Prediction
+
+```{r predicting the score of a movie in 2016}
+#'Manchester by the Sea' is the movie we will attempt to predict the popularity of. I got the necessary attributes for the model from http://www.imdb.com and http://www.rottentomatoes.com . (The observed audience_score is 77.)
+
+manchester <- data.frame(runtime=137, genre="Drama", imdb_rating=7.9)
+predict(m2, manchester, interval="prediction", level=0.95)
+
+```
+
+
+## Part 6: Conclusion
+
+###The linear regression model from the current study predicts with 95% confidence that movie title 'Manchester by the Sea' is expected to have an audience score between 64.66 and 103.5329. In translation to real application, we have to take into account that the upper limit of the interval is impossible since the highest possible audience score is 100.
+
+###This is an observational study with information collected from two websites, so there is room for improvement. For one, predictor imdb_rating is on a popular public website and it may influence audience score. For a future study, popularity score should be collected from another source, not as prone to bias. Also, the sample is selected from data spanning from 1970 to 2014. There may be a trend specific to a more recent window of time. Since any model will be used to predict future movies, the model should be based on contemporary data exclusively. 
